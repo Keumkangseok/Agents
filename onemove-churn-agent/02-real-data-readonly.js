@@ -34,7 +34,9 @@ const tools = [
       "이탈 위험을 확인하려면 먼저 이 도구로 후보를 봐야 한다. 실제로 내려온 데이터 필드를 보고 " +
       "해석해서 판단할 것 — 필드에 없는 내용을 추측해서 판단하지 말 것. " +
       "주의: 이 목록에는 체험권(이름에 '체험권'이 들어간 패스)만 받아본 회원도 섞여 있을 수 있는데, " +
-      "그런 회원은 flag_risky_member 대상이 아니다 (아래 설명 참고).",
+      "그런 회원은 flag_risky_member 대상이 아니다 (아래 설명 참고). " +
+      "'레뷰체험단' 패스는 이름만으로 판단하지 말고 기간을 볼 것 — 2주 정도면 체험용, 3개월처럼 " +
+      "길면 정식 계약.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -53,8 +55,17 @@ const tools = [
           type: "string",
           description: "왜 위험하다고 판단했는지, 조회된 데이터 필드에 근거해서 설명",
         },
+        risk_level: {
+          type: "string",
+          enum: ["high", "medium", "low"],
+          description:
+            "high: 패스가 아직 유효한데(state 1/2, endedAt 안 지남) 장기 미방문 — 지금 컨택하면 " +
+            "살릴 수 있는 사람. medium: 패스 만료된 지 얼마 안 됐는데(대략 한 달 이내) 재등록 없음. " +
+            "low: 패스 만료된 지 오래(몇 달 이상)됐고 재등록도 없음 — 사실상 이미 떠난 사람이라 " +
+            "긴급 리텐션보다는 나중에 별도 윈백 캠페인 대상.",
+        },
       },
-      required: ["member_label", "reason"],
+      required: ["member_label", "reason", "risk_level"],
       additionalProperties: false,
     },
     strict: true,
@@ -70,7 +81,9 @@ async function executeTool(toolName, input) {
   }
 
   if (toolName === "flag_risky_member") {
-    console.log(`  🚩 [실행] 위험 회원 신고: ${input.member_label} — ${input.reason}`);
+    console.log(
+      `  🚩 [실행] 위험 회원 신고 [${input.risk_level}] ${input.member_label} — ${input.reason}`
+    );
     return "신고 접수됨 (화면 출력만, 실제 발송 아님)";
   }
 
@@ -87,9 +100,12 @@ async function runAgent() {
         "도구로 실제 회원 후보 목록을 조회하고, 그 중 정식 회원만 골라서 위험하다고 판단되는 사람을 신고해줘. " +
         "체험권만 받아보고 정식 계약 이력이 없는 회원(체험 미전환자)은 이탈이 아니라 별개의 문제니까 " +
         "신고하지 말고 건너뛰어. " +
+        "'레뷰체험단' 패스는 주의해서 봐: 기간이 2주 정도로 짧으면 최초 신청 시 발급되는 체험용이라 " +
+        "체험 미전환으로 분류(건너뛰기). 하지만 이름에 '레뷰'가 들어가도 3개월권처럼 기간이 긴 " +
+        "패스라면 실제 유료 정식 회원이니 이탈 위험 판단 대상에 포함해. " +
         "판단 근거는 반드시 조회된 데이터 필드에 있는 내용만 사용하고, 데이터에 없는 사실은 추측하지 마. " +
-        "다 확인했으면 마지막에 (1) 누구를 신고했는지와 왜 그런지, (2) 체험 미전환이라 건너뛴 사람이 " +
-        "몇 명인지 한글로 요약해줘.",
+        "다 확인했으면 마지막에 (1) 위험도별(high/medium/low)로 몇 명씩 신고했는지와 각 등급의 대표 " +
+        "사례, (2) 체험 미전환이라 건너뛴 사람이 몇 명인지 한글로 요약해줘.",
     },
   ];
 
