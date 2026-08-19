@@ -97,12 +97,18 @@ async function runAgent() {
   while (true) {
     console.log(`\n─── ${turn}번째 AI 호출 ───`);
 
-    const response = await client.messages.create({
+    // 282명치 데이터를 검토하면서 "생각"에 토큰을 많이 쓸 수 있어서,
+    // max_tokens을 넉넉히 주고 스트리밍으로 호출한다 (스트리밍 안 하면 큰 요청은 타임아웃 위험).
+    // effort: "medium"으로 생각을 적당히 줄여서 답변까지 도달하게 함 (기본값 high는 생각이 너무 길어짐).
+    const stream = client.messages.stream({
       model: "claude-opus-5",
-      max_tokens: 8000, // 후보가 최대 수백 명일 수 있어 넉넉하게
+      max_tokens: 16000,
+      output_config: { effort: "medium" },
       tools,
       messages,
     });
+    const response = await stream.finalMessage();
+    console.log(`  (종료 사유: ${response.stop_reason})`); // 디버깅용 — max_tokens에서 끊기면 여기 찍힘
 
     for (const block of response.content) {
       if (block.type === "text") {
@@ -113,6 +119,14 @@ async function runAgent() {
     }
 
     messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason === "max_tokens") {
+      console.log(
+        "\n⚠️ max_tokens에 걸려서 중간에 끊겼습니다 (생각하는 데 토큰을 다 써버렸을 가능성). " +
+          "02-real-data-readonly.js의 max_tokens 값을 더 늘리거나 effort를 낮춰보세요."
+      );
+      break;
+    }
 
     if (response.stop_reason !== "tool_use") {
       console.log("\n✅ AI가 종료했습니다.");
