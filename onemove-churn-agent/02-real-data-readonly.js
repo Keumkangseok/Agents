@@ -22,10 +22,36 @@
 // 클라우드 Claude 세션(Cowork)에서는 이 도메인이 막혀있어서 반드시 로컬(맥)에서 실행해야 합니다.
 
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reservationApi");
 
 const client = new Anthropic();
+
+// 신고된 회원을 모아뒀다가 실행 끝나면 엑셀/넘버스로 바로 열 수 있는 CSV 파일로 저장한다.
+// 터미널 로그는 "과정"을 보는 용도고, 실제로 쓸 "결과물"은 이 파일임.
+const flaggedResults = [];
+
+function writeCsvReport() {
+  if (flaggedResults.length === 0) return null;
+
+  const order = { high: 0, medium: 1, low: 2 };
+  const sorted = [...flaggedResults].sort((a, b) => order[a.risk_level] - order[b.risk_level]);
+
+  const escapeCsv = (value) => `"${String(value).replace(/"/g, '""')}"`;
+  const header = ["위험도", "회원", "판단 근거"].map(escapeCsv).join(",");
+  const rows = sorted.map((r) =>
+    [r.risk_level, r.member_label, r.reason].map(escapeCsv).join(",")
+  );
+
+  const outDir = path.join(__dirname, "output");
+  fs.mkdirSync(outDir, { recursive: true });
+  const filePath = path.join(outDir, `이탈위험목록_${todayStr()}.csv`);
+  // 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙임
+  fs.writeFileSync(filePath, "﻿" + [header, ...rows].join("\n"), "utf8");
+  return filePath;
+}
 
 const NO_VISIT_DAYS = 14; // 최근 N일 미방문 기준 (MVP 범위, 나중에 조정 가능)
 const TEST_MEMBER_LIMIT = process.env.TEST_MEMBER_LIMIT
@@ -136,6 +162,7 @@ async function executeTool(toolName, input) {
     console.log(
       `  🚩 [실행] 위험 회원 신고 [${input.risk_level}] ${input.member_label} — ${input.reason}`
     );
+    flaggedResults.push(input);
     return "신고 접수됨 (화면 출력만, 실제 발송 아님)";
   }
 
@@ -247,6 +274,12 @@ async function runAgent() {
     messages.push({ role: "user", content: toolResults });
 
     turn += 1;
+  }
+
+  const csvPath = writeCsvReport();
+  if (csvPath) {
+    console.log(`\n📄 결과 파일 저장됨: ${csvPath}`);
+    console.log("   (엑셀/넘버스로 더블클릭해서 열면 표로 정리된 결과를 볼 수 있어요)");
   }
 }
 

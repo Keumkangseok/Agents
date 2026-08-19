@@ -82,6 +82,10 @@ TEST_MEMBER_LIMIT=20 npm run step2
 # 최종 확인할 때는 TEST_MEMBER_LIMIT 없이(=282명 전체) 돌릴 것
 ```
 
+실행이 끝나면 `output/이탈위험목록_YYYY-MM-DD.csv` 파일이 생성됩니다 — 위험도/회원/판단 근거가
+표로 정리되어 있어 엑셀·넘버스로 바로 열어볼 수 있습니다. 실제 회원 이름이 담기는 파일이라
+`.gitignore`에 등록해 깃에는 올라가지 않습니다.
+
 ## 참고
 
 - 1단계는 어디서든 실행 가능하지만, 2단계부터는 원무브 예약 API(`api-reservation.onemove.co.kr`)에
