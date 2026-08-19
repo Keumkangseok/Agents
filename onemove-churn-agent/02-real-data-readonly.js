@@ -173,15 +173,23 @@ async function runAgent() {
     // 282명치 데이터를 검토하면서 "생각"에 토큰을 많이 쓸 수 있어서,
     // max_tokens을 넉넉히 주고 스트리밍으로 호출한다 (스트리밍 안 하면 큰 요청은 타임아웃 위험).
     // effort: "medium"으로 생각을 적당히 줄여서 답변까지 도달하게 함 (기본값 high는 생각이 너무 길어짐).
+    // cache_control: 매 턴마다 전체 대화(282명 데이터 포함)를 통째로 다시 보내는 구조라,
+    // 캐싱을 켜두면 이전 턴에서 이미 보낸 부분은 훨씬 싼 값(약 10%)으로 처리됨 -- 비용 절감 핵심.
     const stream = client.messages.stream({
       model: "claude-opus-5",
       max_tokens: 16000,
       output_config: { effort: "medium" },
+      cache_control: { type: "ephemeral" },
       tools,
       messages,
     });
     const response = await stream.finalMessage();
     console.log(`  (종료 사유: ${response.stop_reason})`); // 디버깅용 — max_tokens에서 끊기면 여기 찍힘
+
+    const u = response.usage;
+    console.log(
+      `  (토큰: 입력 ${u.input_tokens} / 출력 ${u.output_tokens} / 캐시로 읽음 ${u.cache_read_input_tokens ?? 0} / 캐시에 새로 씀 ${u.cache_creation_input_tokens ?? 0})`
+    );
 
     for (const block of response.content) {
       if (block.type === "text") {
