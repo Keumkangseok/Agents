@@ -25,6 +25,15 @@ const client = new Anthropic();
 
 const NO_VISIT_DAYS = 14; // 최근 N일 미방문 기준 (MVP 범위, 나중에 조정 가능)
 
+// 오늘 날짜(KST)를 AI에게 직접 알려주기 위한 함수.
+// 이게 없으면 AI가 데이터 안의 최근 attendedAt을 "오늘"로 착각해서 판단이 실행마다 달라짐 —
+// noVisitsPeriod=14는 서버가 진짜 오늘 기준으로 계산한 거라, AI도 진짜 오늘을 알아야 일관되게 판단함.
+function todayStr() {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
 const tools = [
   {
     name: "list_members",
@@ -125,6 +134,9 @@ async function runAgent() {
     {
       role: "user",
       content:
+        `오늘 날짜는 ${todayStr()}야. 미방문 기간, 만료 경과 기간 같은 걸 계산할 때 이 날짜를 ` +
+        "기준으로 써 — 데이터 안에서 가장 최근 attendedAt을 '오늘'로 착각하지 마, 그건 그냥 " +
+        "그 사람의 마지막 방문일일 뿐이고 실제 오늘은 그것보다 나중이야. " +
         "너의 역할은 원무브 헬스장의 '정식 회원'(재등록 이력이 있는, 즉 체험권이 아닌 정식 계약을 " +
         "맺어본 적 있는 회원) 중 이탈 위험이 있는 사람을 찾는 거야. " +
         "도구로 실제 회원 후보 목록을 조회하고, 그 중 정식 회원만 골라서 위험하다고 판단되는 사람을 신고해줘. " +
