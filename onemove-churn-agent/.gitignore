@@ -1,4 +1,3 @@
 node_modules/
 .env
 output/
-google-service-account.json

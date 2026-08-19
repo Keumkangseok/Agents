@@ -25,7 +25,7 @@ require("dotenv").config();
 const Anthropic = require("@anthropic-ai/sdk");
 const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reservationApi");
 const { buildSummaryText, sendReport } = require("./lib/slack");
-const { ensureSheetSetup, getContactedMemberIds, appendFlaggedMembers, sheetUrl } = require("./lib/sheets");
+const { getContactedMemberIds, appendFlaggedMembers, sheetUrl } = require("./lib/sheets");
 
 const client = new Anthropic();
 
@@ -165,7 +165,6 @@ async function runAgent() {
   // 코드에서 확실하게 걸러낸다 (더 신뢰할 수 있고, 매번 프롬프트에 긴 제외 목록을 안 넣어도 됨).
   let contactedIds = new Set();
   try {
-    await ensureSheetSetup();
     contactedIds = await getContactedMemberIds();
     console.log(`📋 구글 시트에서 연락완료 회원 ${contactedIds.size}명 확인 (이번 신고에서 자동 제외됨)`);
   } catch (err) {
