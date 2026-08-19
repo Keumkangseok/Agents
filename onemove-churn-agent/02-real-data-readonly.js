@@ -19,7 +19,7 @@
 
 require("dotenv").config();
 const Anthropic = require("@anthropic-ai/sdk");
-const { listNoVisitCandidates } = require("./lib/reservationApi");
+const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reservationApi");
 
 const client = new Anthropic();
 
@@ -76,6 +76,24 @@ const tools = [
     },
     strict: true,
   },
+  {
+    name: "get_transactions_by_month",
+    description:
+      "특정 월(YYYY-MM 형식)의 실제 결제/환불 내역 전체를 조회한다. 회원이 이 패스를 진짜 " +
+      "돈 내고 산 건지, 환불된 건 아닌지 확인하고 싶을 때 사용한다. 이 도구는 회원별 필터가 " +
+      "없어 그 달 전체 내역이 내려오니, 이름이나 id로 직접 찾아서 대조할 것. " +
+      "호출할 때마다 실제 API를 부르므로, 모든 후보에 대해 부르지 말고 확신이 필요한 " +
+      "애매한 케이스(엠버서더/양도 등)나 high 등급처럼 중요한 판단에만 선택적으로 사용할 것.",
+    input_schema: {
+      type: "object",
+      properties: {
+        year_month: { type: "string", description: "조회할 연월, 'YYYY-MM' 형식 (예: '2026-07')" },
+      },
+      required: ["year_month"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
 
 async function executeTool(toolName, input) {
@@ -83,6 +101,12 @@ async function executeTool(toolName, input) {
     console.log(`  📋 [실행] 최근 ${NO_VISIT_DAYS}일 미방문 회원 조회 중 (실제 API 호출, 페이지네이션 자동 처리)...`);
     const data = await listNoVisitCandidates(NO_VISIT_DAYS);
     console.log(`  📋 [실행] 총 ${data.data.length}명 수집 완료 (API total: ${data.total})`);
+    return JSON.stringify(data);
+  }
+
+  if (toolName === "get_transactions_by_month") {
+    console.log(`  💳 [실행] ${input.year_month} 결제내역 조회 중 (실제 API 호출)...`);
+    const data = await getTransactionsByMonth(input.year_month);
     return JSON.stringify(data);
   }
 
@@ -113,11 +137,17 @@ async function runAgent() {
         "완전히 빼고, 아예 신고하지 마. " +
         "'엠버서더 전용'이나 '양도' 같은 이름이 특이한 패스는 일반 유료 회원과 똑같이 자동 취급하지 " +
         "말고, 진짜 돈 내고 다니는 고객 관계로 보이는지 스스로 따져봐 — 확신이 안 서면 신고하되 " +
-        "reason에 왜 애매한지 적어. " +
+        "reason에 왜 애매한지 적어. 확신을 높이고 싶으면 get_transactions_by_month로 그 회원의 " +
+        "실제 결제 기록이 있는지 대조해봐도 돼(단, 후보 전원한테 쓰지 말고 필요한 경우에만). " +
+        "또 하나 확인해줄 게 있어: 회원/패스 데이터 안에 '홀딩'(휴회, 일시정지) 관련 필드가 있는지 " +
+        "찾아봐. 만약 있다면, 현재 정당하게 휴회 중인 회원은 이탈 위험이 아니라 정상적인 일시정지 " +
+        "상태니까 신고 대상에서 빼줘. 그런 필드를 못 찾겠으면 추측하지 말고, 마지막 요약에 " +
+        "\"홀딩 여부를 판단할 수 있는 필드를 데이터에서 못 찾았다\"고 솔직하게 알려줘. " +
         "판단 근거는 반드시 조회된 데이터 필드에 있는 내용만 사용하고, 데이터에 없는 사실은 추측하지 마. " +
         "다 확인했으면 마지막에 (1) 위험도별(high/medium/low)로 몇 명씩 신고했는지와 각 등급의 대표 " +
         "사례, (2) 체험 미전환이나 코치수강권이라 건너뛴 사람이 각각 몇 명인지, (3) 엠버서더/양도처럼 " +
-        "판단이 애매했던 케이스가 있으면 몇 명이고 어떻게 처리했는지 한글로 요약해줘.",
+        "판단이 애매했던 케이스가 있으면 몇 명이고 어떻게 처리했는지, (4) 홀딩 관련 필드를 찾았는지 " +
+        "여부와 찾았다면 몇 명을 홀딩으로 제외했는지 한글로 요약해줘.",
     },
   ];
 

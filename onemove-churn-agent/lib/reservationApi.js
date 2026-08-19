@@ -105,4 +105,15 @@ async function listNoVisitCandidates(noVisitsPeriodDays) {
   return { total: total ?? all.length, data: all };
 }
 
-module.exports = { listNoVisitCandidates };
+// 특정 월(YYYY-MM)의 실제 결제/환불 내역 전체를 조회한다 (읽기 전용).
+// 회원별 필터 파라미터가 있는지 확실치 않아 월 단위 전체를 그대로 반환한다 —
+// 특정 회원과 대조하려면 응답 안에서 이름/id로 직접 찾아야 한다 (호출하는 쪽에서 처리).
+async function getTransactionsByMonth(yearMonth) {
+  const franchiseId = process.env.RESERVATION_FRANCHISE_ID || "1";
+  return apiGet("/api/v1/transactions", {
+    franchise: franchiseId,
+    date: yearMonth,
+  });
+}
+
+module.exports = { listNoVisitCandidates, getTransactionsByMonth };
