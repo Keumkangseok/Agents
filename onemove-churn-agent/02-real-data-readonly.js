@@ -26,6 +26,7 @@ const fs = require("fs");
 const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reservationApi");
+const { buildSummaryText, sendReport } = require("./lib/slack");
 
 const client = new Anthropic();
 
@@ -280,6 +281,16 @@ async function runAgent() {
   if (csvPath) {
     console.log(`\n📄 결과 파일 저장됨: ${csvPath}`);
     console.log("   (엑셀/넘버스로 더블클릭해서 열면 표로 정리된 결과를 볼 수 있어요)");
+  }
+
+  if (flaggedResults.length > 0) {
+    try {
+      const summaryText = buildSummaryText(flaggedResults);
+      await sendReport(summaryText);
+      console.log("📣 슬랙으로 요약 전송 완료");
+    } catch (err) {
+      console.log(`⚠️ 슬랙 전송 실패 (CSV 파일은 정상 저장됨): ${err.message}`);
+    }
   }
 }
 
