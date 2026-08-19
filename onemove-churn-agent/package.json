@@ -5,7 +5,8 @@
   "main": "01-toy-example.js",
   "type": "commonjs",
   "scripts": {
-    "toy": "node 01-toy-example.js"
+    "toy": "node 01-toy-example.js",
+    "step2": "node 02-real-data-readonly.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
