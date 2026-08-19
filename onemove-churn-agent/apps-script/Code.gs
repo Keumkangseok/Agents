@@ -4,9 +4,12 @@
 //
 // 구글 클라우드 콘솔, 서비스 계정, API 키 전부 필요 없습니다 — 이 코드를 배포하면 생기는
 // 웹 앱 URL 하나로 슬랙 웹훅과 똑같은 방식으로 통신합니다.
+//
+// 코드를 수정한 뒤에는 "배포 → 배포 관리 → 연필 아이콘 → 새 버전"으로 다시 배포해야
+// 반영됩니다 (URL은 그대로 유지됨).
 
 const SHEET_NAME = "이탈위험목록";
-const HEADER = ["날짜", "위험도", "회원ID", "회원명", "요약", "연락완료"];
+const HEADER = ["날짜", "위험도", "회원ID", "회원명", "요약", "메시지초안", "연락완료"];
 
 function getSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -18,15 +21,11 @@ function getSheet_() {
   return sheet;
 }
 
-// 헤더가 없으면 만들고, 연락완료(F열)에 체크박스 서식을 입힌다 (여러 번 호출해도 안전).
+// 헤더를 항상 최신으로 맞추고(덮어써도 무해함), 연락완료(G열)에 체크박스 서식을 입힌다.
 function ensureSetup_(sheet) {
-  const firstRow = sheet.getRange(1, 1, 1, HEADER.length).getValues()[0];
-  const hasHeader = firstRow.some((v) => v !== "");
-  if (!hasHeader) {
-    sheet.getRange(1, 1, 1, HEADER.length).setValues([HEADER]);
-  }
+  sheet.getRange(1, 1, 1, HEADER.length).setValues([HEADER]);
   const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-  sheet.getRange(2, 6, 1000, 1).setDataValidation(rule);
+  sheet.getRange(2, 7, 1000, 1).setDataValidation(rule);
 }
 
 function jsonResponse_(obj) {
@@ -45,6 +44,7 @@ function doPost(e) {
       entry.member_id,
       entry.member_name,
       entry.plain_summary,
+      entry.message_draft || "",
       false,
     ]);
     if (rows.length > 0) {
@@ -58,7 +58,7 @@ function doPost(e) {
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return jsonResponse_({ ok: true, contactedIds: [] });
     const data = sheet.getRange(2, 1, lastRow - 1, HEADER.length).getValues();
-    const contactedIds = data.filter((row) => row[5] === true).map((row) => String(row[2]));
+    const contactedIds = data.filter((row) => row[6] === true).map((row) => String(row[2]));
     return jsonResponse_({ ok: true, contactedIds });
   }
 

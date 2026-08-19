@@ -32,6 +32,8 @@ const client = new Anthropic();
 // 신고된 회원을 모아뒀다가 실행 끝나면 구글 시트에 기록한다.
 // 터미널 로그는 "과정"을 보는 용도고, 실제로 쓸 "결과물"은 시트임.
 const flaggedResults = [];
+// high 등급 회원의 컨택 메시지 초안 (member_id -> 문구)
+const messageDrafts = new Map();
 
 const NO_VISIT_DAYS = 14; // 최근 N일 미방문 기준 (MVP 범위, 나중에 조정 가능)
 const TEST_MEMBER_LIMIT = process.env.TEST_MEMBER_LIMIT
@@ -127,6 +129,28 @@ const tools = [
     },
     strict: true,
   },
+  {
+    name: "draft_outreach_message",
+    description:
+      "risk_level이 high인 회원에게 실제로 보낼 수 있는 컨택 메시지 초안을 작성한다. " +
+      "high 등급으로 flag_risky_member를 호출한 회원에 대해서만 이 도구를 쓸 것 " +
+      "(medium/low는 지금 단계에서 초안을 안 만든다). " +
+      "직원이 그대로 복사해서 카카오톡/문자로 보낼 수 있는 짧고 다정한 한두 문장으로 쓸 것. " +
+      "지켜야 할 것: (1) 데이터에 없는 개인 사정(부상, 여행, 이사 등)을 추측해서 절대 넣지 말 것 " +
+      "— 대신 '요즘 어떻게 지내세요' 같은 열린 톤을 쓸 것. (2) 사무적이거나 광고 문구처럼 " +
+      "쓰지 말 것 — 진짜 직원이 안부 묻듯이 자연스럽게. (3) 보유 패스나 미방문 기간 같은, " +
+      "이미 확인된 사실은 자연스럽게 언급해도 됨(예: '얼마 만이에요' 같은 톤으로).",
+    input_schema: {
+      type: "object",
+      properties: {
+        member_id: { type: "string", description: "flag_risky_member에서 쓴 것과 같은 회원 id" },
+        message_draft: { type: "string", description: "직원이 그대로 복사해서 보낼 수 있는 메시지 초안" },
+      },
+      required: ["member_id", "message_draft"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
 
 async function executeTool(toolName, input) {
@@ -155,6 +179,12 @@ async function executeTool(toolName, input) {
     );
     flaggedResults.push(input);
     return "신고 접수됨 (화면 출력만, 실제 발송 아님)";
+  }
+
+  if (toolName === "draft_outreach_message") {
+    console.log(`  ✏️ [실행] 컨택 메시지 초안 (id ${input.member_id}) — "${input.message_draft}"`);
+    messageDrafts.set(String(input.member_id), input.message_draft);
+    return "초안 저장됨 (화면 출력만, 실제 발송 아님)";
   }
 
   return `알 수 없는 도구: ${toolName}`;
@@ -200,10 +230,14 @@ async function runAgent() {
         "상태니까 신고 대상에서 빼줘. 그런 필드를 못 찾겠으면 추측하지 말고, 마지막 요약에 " +
         "\"홀딩 여부를 판단할 수 있는 필드를 데이터에서 못 찾았다\"고 솔직하게 알려줘. " +
         "판단 근거는 반드시 조회된 데이터 필드에 있는 내용만 사용하고, 데이터에 없는 사실은 추측하지 마. " +
-        "다 확인했으면 마지막에 (1) 위험도별(high/medium/low)로 몇 명씩 신고했는지와 각 등급의 대표 " +
+        "모든 후보를 다 확인해서 신고를 끝냈으면, 그 다음 risk_level이 high인 회원 각각에 대해 " +
+        "draft_outreach_message로 컨택 메시지 초안을 하나씩 써줘 (medium/low는 초안 안 씀 — 지금 " +
+        "단계에서는 high만). " +
+        "다 끝났으면 마지막에 (1) 위험도별(high/medium/low)로 몇 명씩 신고했는지와 각 등급의 대표 " +
         "사례, (2) 체험 미전환이나 코치수강권(결제내역에서 발견한 직원 포함)이라 건너뛴 사람이 각각 " +
         "몇 명인지, (3) 엠버서더/양도처럼 판단이 애매했던 케이스가 있으면 몇 명이고 어떻게 처리했는지, " +
-        "(4) 홀딩 관련 필드를 찾았는지 여부와 찾았다면 몇 명을 홀딩으로 제외했는지 한글로 요약해줘.",
+        "(4) 홀딩 관련 필드를 찾았는지 여부와 찾았다면 몇 명을 홀딩으로 제외했는지, (5) 컨택 메시지 " +
+        "초안을 몇 명분 작성했는지 한글로 요약해줘.",
     },
   ];
 
@@ -277,7 +311,9 @@ async function runAgent() {
     turn += 1;
   }
 
-  const newResults = flaggedResults.filter((r) => !contactedIds.has(String(r.member_id)));
+  const newResults = flaggedResults
+    .filter((r) => !contactedIds.has(String(r.member_id)))
+    .map((r) => ({ ...r, message_draft: messageDrafts.get(String(r.member_id)) || "" }));
   const alreadyContactedCount = flaggedResults.length - newResults.length;
   if (alreadyContactedCount > 0) {
     console.log(`\n📋 이미 연락완료로 표시된 ${alreadyContactedCount}명은 이번 신고에서 제외했습니다.`);
