@@ -1,0 +1,14 @@
+{
+  "name": "onemove-churn-agent",
+  "version": "0.1.0",
+  "description": "원무브 회원 이탈 위험 감지 & 대응 에이전트",
+  "main": "01-toy-example.js",
+  "type": "commonjs",
+  "scripts": {
+    "toy": "node 01-toy-example.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
+    "dotenv": "^17.4.2"
+  }
+}
