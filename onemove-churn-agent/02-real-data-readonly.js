@@ -14,6 +14,10 @@
 //     RESERVATION_API_PASSWORD=...
 //   실행: npm run step2  (또는 node 02-real-data-readonly.js)
 //
+//   프롬프트만 다듬어보는 개발 중에는 후보 수를 줄여서 싸고 빠르게 테스트할 수 있습니다:
+//     TEST_MEMBER_LIMIT=20 npm run step2
+//   최종 확인할 때는 이 값을 빼고(=282명 전체) 돌리세요.
+//
 // [주의] 이 스크립트는 api-reservation.onemove.co.kr에 직접 접속합니다.
 // 클라우드 Claude 세션(Cowork)에서는 이 도메인이 막혀있어서 반드시 로컬(맥)에서 실행해야 합니다.
 
@@ -24,6 +28,9 @@ const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reserva
 const client = new Anthropic();
 
 const NO_VISIT_DAYS = 14; // 최근 N일 미방문 기준 (MVP 범위, 나중에 조정 가능)
+const TEST_MEMBER_LIMIT = process.env.TEST_MEMBER_LIMIT
+  ? parseInt(process.env.TEST_MEMBER_LIMIT, 10)
+  : null; // 설정하면 후보를 이 인원수로 잘라서 싸고 빠르게 테스트
 
 // 오늘 날짜(KST)를 AI에게 직접 알려주기 위한 함수.
 // 이게 없으면 AI가 데이터 안의 최근 attendedAt을 "오늘"로 착각해서 판단이 실행마다 달라짐 —
@@ -109,6 +116,12 @@ async function executeTool(toolName, input) {
   if (toolName === "list_members") {
     console.log(`  📋 [실행] 최근 ${NO_VISIT_DAYS}일 미방문 회원 조회 중 (실제 API 호출, 페이지네이션 자동 처리)...`);
     const data = await listNoVisitCandidates(NO_VISIT_DAYS);
+    if (TEST_MEMBER_LIMIT) {
+      data.data = data.data.slice(0, TEST_MEMBER_LIMIT);
+      console.log(
+        `  ⚠️ [테스트 모드] TEST_MEMBER_LIMIT=${TEST_MEMBER_LIMIT}으로 ${data.data.length}명만 사용 (전체 ${data.total}명 중 일부, 최종 확인 시엔 빼고 돌릴 것)`
+      );
+    }
     console.log(`  📋 [실행] 총 ${data.data.length}명 수집 완료 (API total: ${data.total})`);
     return JSON.stringify(data);
   }
@@ -176,7 +189,7 @@ async function runAgent() {
     // cache_control: 매 턴마다 전체 대화(282명 데이터 포함)를 통째로 다시 보내는 구조라,
     // 캐싱을 켜두면 이전 턴에서 이미 보낸 부분은 훨씬 싼 값(약 10%)으로 처리됨 -- 비용 절감 핵심.
     const stream = client.messages.stream({
-      model: "claude-opus-5",
+      model: "claude-sonnet-5", // 개발/테스트 단계라 opus 대비 저렴한 모델 사용 (강석 확인)
       max_tokens: 16000,
       output_config: { effort: "medium" },
       cache_control: { type: "ephemeral" },
