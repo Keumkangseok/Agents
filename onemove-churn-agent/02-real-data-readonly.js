@@ -29,7 +29,8 @@ const tools = [
   {
     name: "list_members",
     description:
-      `최근 ${NO_VISIT_DAYS}일간 미방문한 회원 후보 목록을 실제 원무브 시스템에서 조회한다. ` +
+      `최근 ${NO_VISIT_DAYS}일간 미방문한 회원 후보 전체 목록을 실제 원무브 시스템에서 조회한다 ` +
+      "(페이지네이션은 자동으로 끝까지 처리해서 반환하므로 이 도구를 여러 번 부를 필요는 없다). " +
       "이탈 위험을 확인하려면 먼저 이 도구로 후보를 봐야 한다. 실제로 내려온 데이터 필드를 보고 " +
       "해석해서 판단할 것 — 필드에 없는 내용을 추측해서 판단하지 말 것. " +
       "주의: 이 목록에는 체험권(이름에 '체험권'이 들어간 패스)만 받아본 회원도 섞여 있을 수 있는데, " +
@@ -62,8 +63,9 @@ const tools = [
 
 async function executeTool(toolName, input) {
   if (toolName === "list_members") {
-    console.log(`  📋 [실행] 최근 ${NO_VISIT_DAYS}일 미방문 회원 조회 중 (실제 API 호출)...`);
+    console.log(`  📋 [실행] 최근 ${NO_VISIT_DAYS}일 미방문 회원 조회 중 (실제 API 호출, 페이지네이션 자동 처리)...`);
     const data = await listNoVisitCandidates(NO_VISIT_DAYS);
+    console.log(`  📋 [실행] 총 ${data.data.length}명 수집 완료 (API total: ${data.total})`);
     return JSON.stringify(data);
   }
 
@@ -97,7 +99,7 @@ async function runAgent() {
 
     const response = await client.messages.create({
       model: "claude-opus-5",
-      max_tokens: 4096,
+      max_tokens: 8000, // 후보가 최대 수백 명일 수 있어 넉넉하게
       tools,
       messages,
     });

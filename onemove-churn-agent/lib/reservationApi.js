@@ -66,12 +66,43 @@ async function apiGet(path, params = {}) {
 
 // 최근 N일간 미방문 회원 후보 조회 (읽기 전용)
 // MVP 범위: noVisitsPeriod 필터만 사용 (만료 임박 등 다른 신호는 다음 단계에서 추가)
+//
+// /members는 페이지네이션이 있어서(응답 {total, data}) 한 번 호출로는 일부만 내려온다.
+// total을 다 채울 때까지 offset을 늘려가며 반복 조회해서 전체를 모아 반환한다.
 async function listNoVisitCandidates(noVisitsPeriodDays) {
   const franchiseId = process.env.RESERVATION_FRANCHISE_ID || "1";
-  return apiGet("/api/v1/members", {
-    franchise: franchiseId,
-    noVisitsPeriod: noVisitsPeriodDays,
-  });
+  const limit = 100;
+  let offset = 0;
+  let all = [];
+  let total = null;
+  const seenFirstIds = new Set();
+
+  for (let page = 0; page < 50; page += 1) {
+    // 안전장치: offset이 무시되고 API가 총 5000명 이상을 준다고 우겨도 50페이지에서 멈춤
+    const result = await apiGet("/api/v1/members", {
+      franchise: franchiseId,
+      noVisitsPeriod: noVisitsPeriodDays,
+      offset,
+      limit,
+    });
+
+    const records = Array.isArray(result.data) ? result.data : [];
+    if (total === null) total = typeof result.total === "number" ? result.total : null;
+    if (records.length === 0) break;
+
+    // offset이 실제로는 무시되고 매번 같은 첫 페이지가 오는 경우 감지 (무한루프 방지)
+    const firstId = records[0]?.id;
+    if (firstId !== undefined && seenFirstIds.has(firstId)) break;
+    if (firstId !== undefined) seenFirstIds.add(firstId);
+
+    all = all.concat(records);
+    offset += records.length;
+
+    if (total !== null && all.length >= total) break;
+    if (records.length < limit) break; // 마지막 페이지로 간주
+  }
+
+  return { total: total ?? all.length, data: all };
 }
 
 module.exports = { listNoVisitCandidates };
