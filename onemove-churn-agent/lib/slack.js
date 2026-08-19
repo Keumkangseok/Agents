@@ -1,16 +1,13 @@
 // Slack Incoming Webhook으로 결과 요약 전송 (naver-rank-tracker/reporter/slack.js와 동일 패턴)
 
-function buildSummaryText(flaggedResults, skippedCounts) {
+function buildSummaryText(flaggedResults, sheetUrl) {
   const order = { high: 0, medium: 1, low: 2 };
   const byLevel = { high: [], medium: [], low: [] };
   flaggedResults.forEach((r) => byLevel[r.risk_level].push(r));
 
   const lines = [];
   lines.push(`*🚨 원무브 이탈 위험 점검 (${new Date().toISOString().slice(0, 10)})*`);
-  lines.push(
-    `high ${byLevel.high.length}명 / medium ${byLevel.medium.length}명 / low ${byLevel.low.length}명` +
-      (skippedCounts ? ` / 체험 미전환 ${skippedCounts.trial ?? "?"}명 제외` : "")
-  );
+  lines.push(`high ${byLevel.high.length}명 / medium ${byLevel.medium.length}명 / low ${byLevel.low.length}명`);
   lines.push("");
 
   lines.push(`*🔴 지금 컨택 필요 (high) — ${byLevel.high.length}명*`);
@@ -18,13 +15,16 @@ function buildSummaryText(flaggedResults, skippedCounts) {
     lines.push("_없음_");
   } else {
     byLevel.high.forEach((r) => {
-      lines.push(`• *${r.member_label}* — ${r.reason}`);
+      lines.push(`• ${r.plain_summary}`);
     });
   }
   lines.push("");
   lines.push(
-    `medium/low 전체 명단은 CSV 파일(output/이탈위험목록_*.csv)에서 확인하세요.`
+    sheetUrl
+      ? `medium/low 전체 명단과 연락완료 체크는 구글 시트에서: ${sheetUrl}`
+      : "medium/low 전체 명단은 구글 시트에서 확인하세요."
   );
+  lines.push("_연락하셨으면 시트의 '연락완료' 칸에 체크해주세요 — 다음 리포트부터 자동으로 빠집니다._");
 
   return lines.join("\n").trim();
 }

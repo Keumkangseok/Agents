@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "googleapis": "^176.0.0"
   }
 }

@@ -22,37 +22,16 @@
 // 클라우드 Claude 세션(Cowork)에서는 이 도메인이 막혀있어서 반드시 로컬(맥)에서 실행해야 합니다.
 
 require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const { listNoVisitCandidates, getTransactionsByMonth } = require("./lib/reservationApi");
 const { buildSummaryText, sendReport } = require("./lib/slack");
+const { ensureSheetSetup, getContactedMemberIds, appendFlaggedMembers, sheetUrl } = require("./lib/sheets");
 
 const client = new Anthropic();
 
-// 신고된 회원을 모아뒀다가 실행 끝나면 엑셀/넘버스로 바로 열 수 있는 CSV 파일로 저장한다.
-// 터미널 로그는 "과정"을 보는 용도고, 실제로 쓸 "결과물"은 이 파일임.
+// 신고된 회원을 모아뒀다가 실행 끝나면 구글 시트에 기록한다.
+// 터미널 로그는 "과정"을 보는 용도고, 실제로 쓸 "결과물"은 시트임.
 const flaggedResults = [];
-
-function writeCsvReport() {
-  if (flaggedResults.length === 0) return null;
-
-  const order = { high: 0, medium: 1, low: 2 };
-  const sorted = [...flaggedResults].sort((a, b) => order[a.risk_level] - order[b.risk_level]);
-
-  const escapeCsv = (value) => `"${String(value).replace(/"/g, '""')}"`;
-  const header = ["위험도", "회원", "판단 근거"].map(escapeCsv).join(",");
-  const rows = sorted.map((r) =>
-    [r.risk_level, r.member_label, r.reason].map(escapeCsv).join(",")
-  );
-
-  const outDir = path.join(__dirname, "output");
-  fs.mkdirSync(outDir, { recursive: true });
-  const filePath = path.join(outDir, `이탈위험목록_${todayStr()}.csv`);
-  // 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙임
-  fs.writeFileSync(filePath, "﻿" + [header, ...rows].join("\n"), "utf8");
-  return filePath;
-}
 
 const NO_VISIT_DAYS = 14; // 최근 N일 미방문 기준 (MVP 범위, 나중에 조정 가능)
 const TEST_MEMBER_LIMIT = process.env.TEST_MEMBER_LIMIT
@@ -99,10 +78,21 @@ const tools = [
     input_schema: {
       type: "object",
       properties: {
-        member_label: { type: "string", description: "회원을 식별할 수 있는 이름 또는 id" },
+        member_id: { type: "string", description: "회원의 실제 id (숫자, 데이터의 id 필드 그대로)" },
+        member_name: { type: "string", description: "회원 이름" },
+        plain_summary: {
+          type: "string",
+          description:
+            "전문 용어 없이 일반인이 바로 이해할 수 있는 한 문장 요약. " +
+            "예: '박세미님 — 1개월 기간권 보유 중, 20일째 미방문'. " +
+            "state/endedAt/pass id 같은 내부 필드명은 쓰지 말고, 이름·보유 패스 종류(기간권/횟수권 " +
+            "등)·미방문 일수 정도만 담을 것. 슬랙 메시지에 그대로 노출됨.",
+        },
         reason: {
           type: "string",
-          description: "왜 위험하다고 판단했는지, 조회된 데이터 필드에 근거해서 설명",
+          description:
+            "왜 위험하다고 판단했는지, 조회된 데이터 필드에 근거한 상세 설명(기록/감사용, " +
+            "구글 시트에 저장되지만 슬랙에는 안 보임 — plain_summary와 달리 기술적으로 써도 됨)",
         },
         risk_level: {
           type: "string",
@@ -114,7 +104,7 @@ const tools = [
             "긴급 리텐션보다는 나중에 별도 윈백 캠페인 대상.",
         },
       },
-      required: ["member_label", "reason", "risk_level"],
+      required: ["member_id", "member_name", "plain_summary", "reason", "risk_level"],
       additionalProperties: false,
     },
     strict: true,
@@ -161,7 +151,7 @@ async function executeTool(toolName, input) {
 
   if (toolName === "flag_risky_member") {
     console.log(
-      `  🚩 [실행] 위험 회원 신고 [${input.risk_level}] ${input.member_label} — ${input.reason}`
+      `  🚩 [실행] 위험 회원 신고 [${input.risk_level}] ${input.member_name} (id ${input.member_id}) — ${input.plain_summary}`
     );
     flaggedResults.push(input);
     return "신고 접수됨 (화면 출력만, 실제 발송 아님)";
@@ -171,6 +161,17 @@ async function executeTool(toolName, input) {
 }
 
 async function runAgent() {
+  // 구글 시트에서 "연락완료" 체크된 회원ID를 미리 가져온다 — AI 판단에 맡기지 않고
+  // 코드에서 확실하게 걸러낸다 (더 신뢰할 수 있고, 매번 프롬프트에 긴 제외 목록을 안 넣어도 됨).
+  let contactedIds = new Set();
+  try {
+    await ensureSheetSetup();
+    contactedIds = await getContactedMemberIds();
+    console.log(`📋 구글 시트에서 연락완료 회원 ${contactedIds.size}명 확인 (이번 신고에서 자동 제외됨)`);
+  } catch (err) {
+    console.log(`⚠️ 구글 시트 연결 실패, 연락완료 필터링 없이 진행합니다: ${err.message}`);
+  }
+
   const messages = [
     {
       role: "user",
@@ -277,20 +278,29 @@ async function runAgent() {
     turn += 1;
   }
 
-  const csvPath = writeCsvReport();
-  if (csvPath) {
-    console.log(`\n📄 결과 파일 저장됨: ${csvPath}`);
-    console.log("   (엑셀/넘버스로 더블클릭해서 열면 표로 정리된 결과를 볼 수 있어요)");
+  const newResults = flaggedResults.filter((r) => !contactedIds.has(String(r.member_id)));
+  const alreadyContactedCount = flaggedResults.length - newResults.length;
+  if (alreadyContactedCount > 0) {
+    console.log(`\n📋 이미 연락완료로 표시된 ${alreadyContactedCount}명은 이번 신고에서 제외했습니다.`);
   }
 
-  if (flaggedResults.length > 0) {
+  if (newResults.length > 0) {
     try {
-      const summaryText = buildSummaryText(flaggedResults);
+      await appendFlaggedMembers(newResults);
+      console.log(`\n📄 구글 시트에 ${newResults.length}명 기록 완료: ${sheetUrl()}`);
+    } catch (err) {
+      console.log(`⚠️ 구글 시트 기록 실패: ${err.message}`);
+    }
+
+    try {
+      const summaryText = buildSummaryText(newResults, sheetUrl());
       await sendReport(summaryText);
       console.log("📣 슬랙으로 요약 전송 완료");
     } catch (err) {
-      console.log(`⚠️ 슬랙 전송 실패 (CSV 파일은 정상 저장됨): ${err.message}`);
+      console.log(`⚠️ 슬랙 전송 실패: ${err.message}`);
     }
+  } else {
+    console.log("\n신고할 신규 위험 회원이 없습니다 (전부 이미 연락완료 처리됐거나, 위험 회원 자체가 없음).");
   }
 }
 
