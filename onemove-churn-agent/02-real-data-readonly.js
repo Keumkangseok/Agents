@@ -252,7 +252,7 @@ async function runAgent() {
     // 캐싱을 켜두면 이전 턴에서 이미 보낸 부분은 훨씬 싼 값(약 10%)으로 처리됨 -- 비용 절감 핵심.
     const stream = client.messages.stream({
       model: "claude-sonnet-5", // 개발/테스트 단계라 opus 대비 저렴한 모델 사용 (강석 확인)
-      max_tokens: 16000,
+      max_tokens: 64000,
       output_config: { effort: "medium" },
       cache_control: { type: "ephemeral" },
       tools,
